@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8" />
+  <title>Бат Рамо - Калориен Ловец (Phaser)</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+<script>
+const config = {
+  type: Phaser.AUTO,
+  width: 800,
+  height: 400,
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { y: 0 },
+      debug: false
+    }
+  },
+  scene: {
+    preload: preload,
+    create: create,
+    update: update
+  }
+};
+
+const game = new Phaser.Game(config);
+
+let bg;
+let batRamo;
+let bossFail, bossOk;
+let items;         // Група за храна и пътеки
+let cursors;
+let music;
+let reward;
+
+let calories = 0;
+let weight   = 70;
+let timeLeft = 50;
+let gameOver = false;
+
+// HUD
+let timerText, weightText, infoText;
+
+function preload() {
+  this.load.image('background', 'background.png');
+  this.load.image('bat_ramo', 'bat_ramo.png');
+  this.load.image('burger', 'burger.png');
+  this.load.image('pizza', 'pizza.png');
+  this.load.image('donut', 'donut.png');
+  this.load.image('barbell', 'barbell.png');
+  this.load.image('treadmill', 'treadmill.png');
+
+  this.load.image('boss_fail', 'boss_fail.png');
+  this.load.image('boss_ok',   'boss_ok.png');
+  this.load.image('reward', 'reward.png');
+
+  this.load.audio('song', 'song.mp3');
+}
+
+function create() {
+  // Фон
+  bg = this.add.image(400, 200, 'background');
+
+  // Бат Рамо
+  batRamo = this.physics.add.sprite(400, 200, 'bat_ramo');
+  batRamo.setScale(0.2).setCollideWorldBounds(true);
+
+  // Босове
+  bossFail = this.add.sprite(900, 200, 'boss_fail');
+  bossFail.setScale(0.3).setVisible(false);
+
+  bossOk = this.add.sprite(900, 200, 'boss_ok');
+  bossOk.setScale(0.4).setVisible(false);
+
+  // Награда
+  reward = this.add.sprite(900, 200, 'reward');
+  reward.setScale(0.2).setVisible(false);
+
+  // Създаваме групата items като Arcade Physics Group
+  items = this.physics.add.group({
+    allowGravity: false,
+    immovable: false
+  });
+
+  // Сблъсък между Бат Рамо и предмети
+  this.physics.add.overlap(batRamo, items, collectItem, null, this);
+
+  // Клавиатура
+  cursors = this.input.keyboard.createCursorKeys();
+
+  // HUD
+  timerText = this.add.text(10, 10, `Оставащо време: ${timeLeft}s`, { fontSize: '16px', fill: '#fff' });
+  weightText = this.add.text(10, 30, `Тегло: ${weight} кг`, { fontSize: '16px', fill: '#fff' });
+  infoText   = this.add.text(10, 50, '', { fontSize: '16px', fill: '#fff' });
+
+  // Таймер
+  this.time.addEvent({
+    delay: 1000,
+    callback: () => {
+      if (!gameOver) {
+        timeLeft--;
+        spawnItem.call(this);
+      }
+    },
+    loop: true
+  });
+
+  // Музика
+  music = this.sound.add('song', { loop: true, volume: 0.8 });
+  this.input.once('pointerdown', () => {
+    music.play();
+  });
+}
+
+function update() {
+  if (gameOver) return;
+
+  // Нулираме скоростта на Бат Рамо
+  batRamo.setVelocity(0);
+
+  // Управление
+  if (cursors.up.isDown)    batRamo.setVelocityY(-200);
+  if (cursors.down.isDown)  batRamo.setVelocityY(200);
+  if (cursors.left.isDown)  batRamo.setVelocityX(-200);
+  if (cursors.right.isDown) batRamo.setVelocityX(200);
+
+  // Обновяване на HUD
+  timerText.setText(`Оставащо време: ${timeLeft}s`);
+  weightText.setText(`Тегло: ${weight} кг`);
+
+  // Премахване на предмети извън екрана
+  items.children.each(item => {
+    if (item.x < -50) {
+      item.destroy();
+    }
+  });
+
+  // Проверка за край
+  if (weight >= 100) {
+    gameOver = true;
+    infoText.setText('Поздравления! Бат Рамо постигна целта!');
+    showSuccessBoss.call(this);
+  }
+  if (timeLeft <= 0 && !gameOver) {
+    gameOver = true;
+    infoText.setText('Неуспех! Здравословният бос идва...');
+    showFailBoss.call(this);
+  }
+}
+
+// Функция за създаване на предмет
+function spawnItem() {
+  const itemTypes = ['burger', 'pizza', 'donut', 'barbell', 'treadmill'];
+  const chosen = Phaser.Math.RND.pick(itemTypes);
+
+  // Създаваме в групата
+  const item = items.create(820, Phaser.Math.Between(50, 350), chosen);
+  item.setScale(0.2);
+
+  // Движим наляво
+  item.body.velocity.x = -200;
+}
+
+// Събиране на предмет
+function collectItem(batRamo, item) {
+  const type = item.texture.key;
+  if (['burger', 'pizza', 'donut'].includes(type)) {
+    calories += 200; weight += 1;
+  } else if (type === 'barbell') {
+    calories += 500; weight += 2;
+  } else if (type === 'treadmill') {
+    calories -= 300; weight -= 1;
+  }
+  item.destroy();
+}
+
+// При успех
+function showSuccessBoss() {
+  bossOk.setVisible(true);
+
+  // Босът влиза
+  this.tweens.add({
+    targets: bossOk,
+    x: 600,
+    duration: 2000,
+    ease: 'Power2',
+    onComplete: () => {
+      // Увеличаваме Бат Рамо
+      this.tweens.add({
+        targets: batRamo,
+        scale: 0.3,
+        duration: 1500,
+        ease: 'Power2'
+      });
+
+      // Бат Рамо в центъра
+      this.tweens.add({
+        targets: batRamo,
+        x: 400,
+        y: 200,
+        duration: 2000,
+        delay: 1500,
+        ease: 'Power2',
+        onComplete: () => {
+          // Награда
+          reward.setPosition(bossOk.x, bossOk.y);
+          reward.setVisible(true);
+
+          this.tweens.add({
+            targets: reward,
+            x: batRamo.x,
+            y: batRamo.y,
+            duration: 3000,
+            ease: 'Power2',
+            onComplete: () => {
+              infoText.setText('Босът връчи награда на Бат Рамо!');
+            }
+          });
+        }
+      });
+    }
+  });
+}
+
+// При провал
+function showFailBoss() {
+  bossFail.setVisible(true);
+
+  this.tweens.add({
+    targets: bossFail,
+    x: batRamo.x + 80,
+    y: batRamo.y,
+    duration: 2000,
+    ease: 'Power2',
+    onComplete: () => {
+      batRamo.x = bossFail.x - 20;
+      batRamo.y = bossFail.y;
+
+      this.tweens.add({
+        targets: batRamo,
+        scale: 0.3,
+        duration: 1000,
+        ease: 'Power2',
+        onComplete: () => {
+          this.tweens.add({
+            targets: batRamo,
+            x: 900,
+            y: -150,
+            angle: 720,
+            duration: 3000,
+            ease: 'Power2',
+            onComplete: () => {
+              infoText.setText('Бат Рамо бе изхвърлен през прозореца!');
+              batRamo.destroy();
+
+              const bossSpeech = this.add.text(
+                bossFail.x, 
+                bossFail.y - 60, 
+                'Бат Рамо е комплексар',
+                { fontSize: '16px', fill: '#fff', backgroundColor: '#000' }
+              );
+              bossSpeech.setOrigin(0.5);
+            }
+          });
+        }
+      });
+    }
+  });
+}
+</script>
+</body>
+</html>
